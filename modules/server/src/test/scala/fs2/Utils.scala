@@ -21,6 +21,8 @@ import freestyle.rpc.common._
 import freestyle.rpc.protocol._
 import _root_.fs2._
 import cats.effect.Effect
+import freestyle.rpc.testing.ServerChannel.withServerChannel
+import io.grpc.ServerServiceDefinition
 
 object Utils extends CommonUtils {
 
@@ -136,28 +138,26 @@ object Utils extends CommonUtils {
 
     import service._
     import handlers.server._
-    import freestyle.rpc.server._
 
     //////////////////////////////////
     // Server Runtime Configuration //
     //////////////////////////////////
 
-    implicit val freesRPCHandler: ServerRPCService[ConcurrentMonad] =
+    implicit private val freesRPCHandler: ServerRPCService[ConcurrentMonad] =
       new ServerRPCService[ConcurrentMonad]
 
-    val grpcConfigs: List[GrpcConfig] = List(
-      AddService(RPCService.bindService[ConcurrentMonad])
-    )
-
-    implicit val serverW: ServerW = createServerConf(grpcConfigs)
+    private val serviceDefinition: ServerServiceDefinition = RPCService.bindService[ConcurrentMonad]
 
     //////////////////////////////////
     // Client Runtime Configuration //
     //////////////////////////////////
 
-    implicit val freesRPCServiceClient: RPCService.Client[ConcurrentMonad] =
-      RPCService.client[ConcurrentMonad](createChannelFor)
-
+    def runTestProgram[A](f: RPCService.Client[ConcurrentMonad] => A): A =
+      withServerChannel(Seq(serviceDefinition)) { sc =>
+        implicit val client: RPCService.Client[ConcurrentMonad] =
+          RPCService.clientFromChannel[ConcurrentMonad](sc)
+        f(client)
+      }
   }
 
   object implicits extends FreesRuntime

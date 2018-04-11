@@ -32,7 +32,7 @@ class MonitorServerInterceptorTests extends BaseMonitorServerInterceptorTests {
     val metrics: MetricRegistry      = new MetricRegistry
     val configuration: Configuration = Configuration.defaultBasicMetrics
     configuration.collectorRegistry.register(new DropwizardExports(metrics))
-    InterceptorsRuntime(configuration)
+    new InterceptorsRuntime(configuration)
   }
 
   override def allMetricsInterceptorsRuntime: InterceptorsRuntime = {
@@ -40,7 +40,7 @@ class MonitorServerInterceptorTests extends BaseMonitorServerInterceptorTests {
     val metrics: MetricRegistry      = new MetricRegistry
     val configuration: Configuration = Configuration.defaultAllMetrics
     configuration.collectorRegistry.register(new DropwizardExports(metrics))
-    InterceptorsRuntime(configuration)
+    new InterceptorsRuntime(configuration)
   }
 
   override def interceptorsRuntimeWithNonDefaultBuckets(
@@ -49,6 +49,6 @@ class MonitorServerInterceptorTests extends BaseMonitorServerInterceptorTests {
     val metrics: MetricRegistry      = new MetricRegistry
     val configuration: Configuration = Configuration.defaultAllMetrics.withLatencyBuckets(buckets)
     configuration.collectorRegistry.register(new DropwizardExports(metrics))
-    InterceptorsRuntime(configuration)
+    new InterceptorsRuntime(configuration)
   }
 }
