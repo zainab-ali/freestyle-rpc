@@ -27,7 +27,6 @@ import scala.collection.JavaConverters._
 
 abstract class BaseMonitorServerInterceptorTests extends RpcBaseTestSuite {
 
-  import freestyle.rpc.server.implicits._
   import freestyle.rpc.protocol.Utils.database._
   import freestyle.rpc.prometheus.shared.RegistryHelper._
 
@@ -40,18 +39,13 @@ abstract class BaseMonitorServerInterceptorTests extends RpcBaseTestSuite {
 
     "work for unary RPC metrics" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.u(a1.x, a1.y)
+      val runtime: InterceptorsRuntime = defaultInterceptorsRuntime
+      import runtime._
 
-      val serverRuntime: InterceptorsRuntime = defaultInterceptorsRuntime
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.u(a1.x, a1.y)
 
-      import serverRuntime._
-
-      (for {
-        _ <- serverStart[ConcurrentMonad]
-        _ <- clientProgram[ConcurrentMonad]
-        _ <- serverStop[ConcurrentMonad]
-      } yield (): Unit).unsafeRunSync()
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad])
 
       findRecordedMetricOrThrow(serverMetricRpcStarted).samples.size() shouldBe 1
       findRecordedMetricOrThrow(serverMetricStreamMessagesReceived).samples shouldBe empty
@@ -75,21 +69,13 @@ abstract class BaseMonitorServerInterceptorTests extends RpcBaseTestSuite {
 
     "work for client streaming RPC metrics" in {
 
-      ignoreOnTravis(
-        "TODO: restore once https://github.com/frees-io/freestyle-rpc/issues/168 is fixed")
+      val runtime: InterceptorsRuntime = defaultInterceptorsRuntime
+      import runtime._
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[D] =
-        APP.cs(cList, i)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[D] =
+        app.cs(cList, i)
 
-      val serverRuntime: InterceptorsRuntime = defaultInterceptorsRuntime
-
-      import serverRuntime._
-
-      (for {
-        _ <- serverStart[ConcurrentMonad]
-        _ <- clientProgram[ConcurrentMonad]
-        _ <- serverStop[ConcurrentMonad]
-      } yield (): Unit).unsafeRunSync()
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad])
 
       findRecordedMetricOrThrow(serverMetricRpcStarted).samples.size() shouldBe 1
       findRecordedMetricOrThrow(serverMetricStreamMessagesReceived).samples.size() shouldBe 1
@@ -112,18 +98,13 @@ abstract class BaseMonitorServerInterceptorTests extends RpcBaseTestSuite {
 
     "work for server streaming RPC metrics" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[List[C]] =
-        APP.ss(a2.x, a2.y)
+      val runtime: InterceptorsRuntime = defaultInterceptorsRuntime
+      import runtime._
 
-      val serverRuntime: InterceptorsRuntime = defaultInterceptorsRuntime
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[List[C]] =
+        app.ss(a2.x, a2.y)
 
-      import serverRuntime._
-
-      val response: List[C] = (for {
-        _ <- serverStart[ConcurrentMonad]
-        r <- clientProgram[ConcurrentMonad]
-        _ <- serverStop[ConcurrentMonad]
-      } yield r).unsafeRunSync()
+      val response = runTestProgram(implicit app => clientProgram[ConcurrentMonad])
 
       findRecordedMetricOrThrow(serverMetricRpcStarted).samples.size() shouldBe 1
       findRecordedMetricOrThrow(serverMetricStreamMessagesReceived).samples shouldBe empty
@@ -161,18 +142,13 @@ abstract class BaseMonitorServerInterceptorTests extends RpcBaseTestSuite {
 
     "work for bidirectional streaming RPC metrics" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[E] =
-        APP.bs(eList)
+      val runtime: InterceptorsRuntime = defaultInterceptorsRuntime
+      import runtime._
 
-      val serverRuntime: InterceptorsRuntime = defaultInterceptorsRuntime
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[E] =
+        app.bs(eList)
 
-      import serverRuntime._
-
-      (for {
-        _ <- serverStart[ConcurrentMonad]
-        _ <- clientProgram[ConcurrentMonad]
-        _ <- serverStop[ConcurrentMonad]
-      } yield (): Unit).unsafeRunSync()
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad])
 
       findRecordedMetricOrThrow(serverMetricRpcStarted).samples.size() shouldBe 1
       findRecordedMetricOrThrow(serverMetricStreamMessagesReceived).samples.size() shouldBe 1
@@ -195,18 +171,13 @@ abstract class BaseMonitorServerInterceptorTests extends RpcBaseTestSuite {
 
     "work when no histogram is enabled" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.u(a1.x, a1.y)
+      val runtime: InterceptorsRuntime = defaultInterceptorsRuntime
+      import runtime._
 
-      val serverRuntime: InterceptorsRuntime = defaultInterceptorsRuntime
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.u(a1.x, a1.y)
 
-      import serverRuntime._
-
-      (for {
-        _ <- serverStart[ConcurrentMonad]
-        _ <- clientProgram[ConcurrentMonad]
-        _ <- serverStop[ConcurrentMonad]
-      } yield (): Unit).unsafeRunSync()
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad])
 
       findRecordedMetric(serverMetricHandledLatencySeconds) shouldBe None
 
@@ -214,18 +185,13 @@ abstract class BaseMonitorServerInterceptorTests extends RpcBaseTestSuite {
 
     "work when histogram is enabled" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.u(a1.x, a1.y)
+      val runtime: InterceptorsRuntime = allMetricsInterceptorsRuntime
+      import runtime._
 
-      val serverRuntime: InterceptorsRuntime = allMetricsInterceptorsRuntime
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.u(a1.x, a1.y)
 
-      import serverRuntime._
-
-      (for {
-        _ <- serverStart[ConcurrentMonad]
-        _ <- clientProgram[ConcurrentMonad]
-        _ <- serverStop[ConcurrentMonad]
-      } yield (): Unit).unsafeRunSync()
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad])
 
       val metric: Option[Collector.MetricFamilySamples] =
         findRecordedMetric(serverMetricHandledLatencySeconds)
@@ -239,19 +205,14 @@ abstract class BaseMonitorServerInterceptorTests extends RpcBaseTestSuite {
 
     "work for different buckets" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.u(a1.x, a1.y)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.u(a1.x, a1.y)
 
-      val buckets: Vector[Double]            = Vector[Double](0.1, 0.2, 0.8)
-      val serverRuntime: InterceptorsRuntime = interceptorsRuntimeWithNonDefaultBuckets(buckets)
+      val buckets: Vector[Double]      = Vector[Double](0.1, 0.2, 0.8)
+      val runtime: InterceptorsRuntime = interceptorsRuntimeWithNonDefaultBuckets(buckets)
+      import runtime._
 
-      import serverRuntime._
-
-      (for {
-        _ <- serverStart[ConcurrentMonad]
-        _ <- clientProgram[ConcurrentMonad]
-        _ <- serverStop[ConcurrentMonad]
-      } yield (): Unit).unsafeRunSync()
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad])
 
       countSamples(serverMetricHandledLatencySeconds, "grpc_server_handled_latency_seconds_bucket") shouldBe (buckets.size + 1)
 
@@ -259,22 +220,20 @@ abstract class BaseMonitorServerInterceptorTests extends RpcBaseTestSuite {
 
     "work when combining multiple calls" in {
 
-      def unary[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.u(a1.x, a1.y)
+      val runtime: InterceptorsRuntime = defaultInterceptorsRuntime
+      import runtime._
 
-      def clientStreaming[F[_]](implicit APP: MyRPCClient[F]): F[D] =
-        APP.cs(cList, i)
+      def unary[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.u(a1.x, a1.y)
 
-      val serverRuntime: InterceptorsRuntime = defaultInterceptorsRuntime
+      def clientStreaming[F[_]](implicit app: MyRPCClient[F]): F[D] =
+        app.cs(cList, i)
 
-      import serverRuntime._
-
-      (for {
-        _ <- serverStart[ConcurrentMonad]
-        _ <- unary[ConcurrentMonad]
-        _ <- clientStreaming[ConcurrentMonad]
-        _ <- serverStop[ConcurrentMonad]
-      } yield (): Unit).unsafeRunSync()
+      runTestProgram(implicit app =>
+        for {
+          _ <- unary[ConcurrentMonad]
+          _ <- clientStreaming[ConcurrentMonad]
+        } yield ())
 
       findRecordedMetricOrThrow(serverMetricRpcStarted).samples.size() shouldBe 2
       findRecordedMetricOrThrow(serverMetricHandledCompleted).samples.size() shouldBe 2

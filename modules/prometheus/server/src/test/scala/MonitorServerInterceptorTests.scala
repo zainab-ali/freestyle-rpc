@@ -25,12 +25,12 @@ class MonitorServerInterceptorTests extends BaseMonitorServerInterceptorTests {
   override def name: String = "Prometheus"
 
   override def defaultInterceptorsRuntime: InterceptorsRuntime =
-    InterceptorsRuntime(Configuration.defaultBasicMetrics)
+    new InterceptorsRuntime(Configuration.defaultBasicMetrics)
 
   override def allMetricsInterceptorsRuntime: InterceptorsRuntime =
-    InterceptorsRuntime(Configuration.defaultAllMetrics)
+    new InterceptorsRuntime(Configuration.defaultAllMetrics)
 
   override def interceptorsRuntimeWithNonDefaultBuckets(
       buckets: Vector[Double]): InterceptorsRuntime =
-    InterceptorsRuntime(Configuration.defaultAllMetrics.withLatencyBuckets(buckets))
+    new InterceptorsRuntime(Configuration.defaultAllMetrics.withLatencyBuckets(buckets))
 }

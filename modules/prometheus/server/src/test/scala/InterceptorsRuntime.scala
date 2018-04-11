@@ -19,46 +19,37 @@ package prometheus
 package server
 
 import freestyle.rpc.common.ConcurrentMonad
+import freestyle.rpc.interceptors.implicits._
 import freestyle.rpc.prometheus.shared.Configuration
 import freestyle.rpc.protocol.Utils._
+import freestyle.rpc.protocol.Utils.client.MyRPCClient
+import freestyle.rpc.protocol.Utils.handlers.client._
+import freestyle.rpc.protocol.Utils.handlers.server._
+import freestyle.rpc.testing.ServerChannel.withServerChannel
+import io.grpc.ServerServiceDefinition
 import io.prometheus.client.CollectorRegistry
 
-case class InterceptorsRuntime(
+class InterceptorsRuntime(
     configuration: Configuration,
-    cr: CollectorRegistry = new CollectorRegistry())
+    implicit val cr: CollectorRegistry = new CollectorRegistry())
     extends CommonUtils {
 
   import service._
-  import handlers.server._
-  import handlers.client._
-  import freestyle.rpc.server._
-  import freestyle.rpc.interceptors.implicits._
 
-  //////////////////////////////////
-  // Server Runtime Configuration //
-  //////////////////////////////////
+  private val monitorInterceptor = MonitoringServerInterceptor(
+    configuration.withCollectorRegistry(cr))
 
-  lazy val monitorInterceptor = MonitoringServerInterceptor(configuration.withCollectorRegistry(cr))
-
-  implicit val CR: CollectorRegistry = cr
-
-  lazy val grpcConfigs: List[GrpcConfig] = List(
-    AddService(RPCService.bindService[ConcurrentMonad].interceptWith(monitorInterceptor))
-  )
-
-  implicit lazy val serverW: ServerW = createServerConfOnRandomPort(grpcConfigs)
-
-  implicit lazy val freesRPCHandler: ServerRPCService[ConcurrentMonad] =
+  implicit private val serverHandler: ServerRPCService[ConcurrentMonad] =
     new ServerRPCService[ConcurrentMonad]
 
-  //////////////////////////////////
-  // Client Runtime Configuration //
-  //////////////////////////////////
+  private val serviceDefinition: ServerServiceDefinition =
+    RPCService.bindService[ConcurrentMonad].interceptWith(monitorInterceptor)
 
-  implicit lazy val freesRPCServiceClient: RPCService.Client[ConcurrentMonad] =
-    RPCService.client[ConcurrentMonad](createChannelForPort(pickUnusedPort))
-
-  implicit lazy val freesRPCServiceClientHandler: FreesRPCServiceClientHandler[ConcurrentMonad] =
-    new FreesRPCServiceClientHandler[ConcurrentMonad]
+  def runTestProgram[A](f: MyRPCClient[ConcurrentMonad] => ConcurrentMonad[A]): A =
+    withServerChannel(Seq(serviceDefinition)) { sc =>
+      implicit val client        = RPCService.clientFromChannel[ConcurrentMonad](sc)
+      implicit val clientHandler = new FreesRPCServiceClientHandler[ConcurrentMonad]
+      f(clientHandler).unsafeRunSync()
+    }
 
 }
