@@ -32,9 +32,9 @@ class RPCTests extends RpcBaseTestSuite {
 
     def runTestProgram[T](ssd: ServerServiceDefinition): Assertion = {
 
-      withServerChannel(ssd) { sc =>
+      withServerChannel(Seq(ssd)) { sc =>
         val rpcServiceClient: service.RPCService.Client[ConcurrentMonad] =
-          service.RPCService.clientFromChannel[ConcurrentMonad](sc.channel)
+          service.RPCService.clientFromChannel[ConcurrentMonad](sc)
 
         val (r1, r2) = Apply[ConcurrentMonad]
           .product(

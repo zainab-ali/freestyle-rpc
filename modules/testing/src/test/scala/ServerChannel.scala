@@ -19,12 +19,11 @@ package testing
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-
-import io.grpc.{ManagedChannel, Server, ServerServiceDefinition}
-import io.grpc.inprocess.{InProcessChannelBuilder, InProcessServerBuilder}
+import io.grpc._
+import io.grpc.inprocess._
 import io.grpc.util.MutableHandlerRegistry
 
-final case class ServerChannel(server: Server, channel: ManagedChannel) {
+class ServerChannel(server: Server, val channel: ManagedChannel) {
 
   def shutdown(): Boolean = {
     channel.shutdown()
@@ -47,7 +46,9 @@ final case class ServerChannel(server: Server, channel: ManagedChannel) {
 
 object ServerChannel {
 
-  def apply(serverServiceDefinitions: ServerServiceDefinition*): ServerChannel = {
+  def apply(
+      serverServiceDefinitions: Seq[ServerServiceDefinition],
+      transformChannel: InProcessChannelBuilder => InProcessChannelBuilder = identity): ServerChannel = {
     val serviceRegistry =
       new MutableHandlerRegistry
     val serverName: String =
@@ -56,19 +57,22 @@ object ServerChannel {
       InProcessServerBuilder
         .forName(serverName)
         .fallbackHandlerRegistry(serviceRegistry)
-        .directExecutor()
+    //.directExecutor    Note: using the recommended Direct Executor causes bidirectional tests to deadlock
     val channelBuilder: InProcessChannelBuilder =
-      InProcessChannelBuilder.forName(serverName)
+      transformChannel(InProcessChannelBuilder.forName(serverName))
 
-    serverServiceDefinitions.toList.map(serverBuilder.addService)
+    serverServiceDefinitions.foreach(serverBuilder.addService)
 
-    ServerChannel(serverBuilder.build().start(), channelBuilder.directExecutor.build)
+    new ServerChannel(serverBuilder.build.start(), channelBuilder.directExecutor.build)
   }
 
-  def withServerChannel[A](services: ServerServiceDefinition*)(f: ServerChannel => A): A = {
+  def withServerChannel[A](
+      services: Seq[ServerServiceDefinition],
+      transformChannel: InProcessChannelBuilder => InProcessChannelBuilder = identity)(
+      f: Channel => A): A = {
 
-    val sc: ServerChannel = apply(services: _*)
-    val result: A         = f(sc)
+    val sc: ServerChannel = apply(services, transformChannel)
+    val result: A         = f(sc.channel)
     sc.shutdown()
 
     result

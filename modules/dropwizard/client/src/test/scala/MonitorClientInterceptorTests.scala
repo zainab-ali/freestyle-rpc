@@ -27,30 +27,30 @@ class MonitorClientInterceptorTests extends BaseMonitorClientInterceptorTests {
 
   override def name: String = "Dropwizard"
 
-  def defaultClientRuntime: InterceptorsRuntime = {
+  def defaultInterceptorsRuntime: InterceptorsRuntime = {
 
     val metrics: MetricRegistry      = new MetricRegistry
     val configuration: Configuration = Configuration.defaultBasicMetrics
     configuration.collectorRegistry.register(new DropwizardExports(metrics))
 
-    InterceptorsRuntime(configuration)
+    new InterceptorsRuntime(configuration)
   }
 
-  def allMetricsClientRuntime: InterceptorsRuntime = {
+  def allMetricsInterceptorsRuntime: InterceptorsRuntime = {
 
     val metrics: MetricRegistry      = new MetricRegistry
     val configuration: Configuration = Configuration.defaultAllMetrics
     configuration.collectorRegistry.register(new DropwizardExports(metrics))
 
-    InterceptorsRuntime(configuration)
+    new InterceptorsRuntime(configuration)
   }
 
-  def clientRuntimeWithNonDefaultBuckets(buckets: Vector[Double]): InterceptorsRuntime = {
+  def interceptorsRuntimeWithNonDefaultBuckets(buckets: Vector[Double]): InterceptorsRuntime = {
 
     val metrics: MetricRegistry      = new MetricRegistry
     val configuration: Configuration = Configuration.defaultAllMetrics.withLatencyBuckets(buckets)
     configuration.collectorRegistry.register(new DropwizardExports(metrics))
 
-    InterceptorsRuntime(configuration)
+    new InterceptorsRuntime(configuration)
   }
 }

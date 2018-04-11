@@ -20,26 +20,24 @@ package client
 
 import freestyle.rpc.common._
 import freestyle.rpc.protocol.Utils.client.MyRPCClient
-import io.prometheus.client.{Collector, CollectorRegistry}
+import io.prometheus.client._
 import freestyle.rpc.interceptors.metrics._
 import io.prometheus.client.Collector.MetricFamilySamples
 import org.scalatest.exceptions.TestFailedException
 import org.scalatest.Assertion
-import org.scalatest.matchers.{MatchResult, Matcher}
-
+import org.scalatest.matchers._
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 
 abstract class BaseMonitorClientInterceptorTests extends RpcBaseTestSuite {
 
-  import freestyle.rpc.server.implicits._
   import freestyle.rpc.protocol.Utils.database._
   import freestyle.rpc.prometheus.shared.RegistryHelper._
 
   def name: String
-  def defaultClientRuntime: InterceptorsRuntime
-  def allMetricsClientRuntime: InterceptorsRuntime
-  def clientRuntimeWithNonDefaultBuckets(buckets: Vector[Double]): InterceptorsRuntime
+  def defaultInterceptorsRuntime: InterceptorsRuntime
+  def allMetricsInterceptorsRuntime: InterceptorsRuntime
+  def interceptorsRuntimeWithNonDefaultBuckets(buckets: Vector[Double]): InterceptorsRuntime
 
   def beASampleMetric(
       labels: List[String],
@@ -78,10 +76,13 @@ abstract class BaseMonitorClientInterceptorTests extends RpcBaseTestSuite {
 
     "work for unary RPC metrics" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.u(a1.x, a1.y)
+      val runtime: InterceptorsRuntime = defaultInterceptorsRuntime
+      import runtime._
 
-      def check(implicit CR: CollectorRegistry): ConcurrentMonad[Assertion] = suspendM {
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.u(a1.x, a1.y)
+
+      def check: ConcurrentMonad[Assertion] = suspendM {
         val startedTotal: Double = extractMetricValue(clientMetricRpcStarted)
         startedTotal should be >= 0d
         startedTotal should be <= 1d
@@ -94,33 +95,25 @@ abstract class BaseMonitorClientInterceptorTests extends RpcBaseTestSuite {
         handledSamples.headOption should beASampleMetric(List("UNARY", "RPCService", "unary", "OK"))
       }
 
-      val clientRuntime: InterceptorsRuntime = defaultClientRuntime
-      import clientRuntime._
-
-      (for {
-        _         <- serverStart[ConcurrentMonad]
-        _         <- clientProgram[ConcurrentMonad]
-        assertion <- check
-        _         <- serverStop[ConcurrentMonad]
-      } yield assertion).unsafeRunSync()
-
+      runTestProgram(implicit app =>
+        for {
+          _         <- clientProgram[ConcurrentMonad]
+          assertion <- check
+        } yield assertion)
     }
 
     "work for client streaming RPC metrics" in {
 
-      ignoreOnTravis(
-        "TODO: restore once https://github.com/frees-io/freestyle-rpc/issues/168 is fixed")
+      val runtime: InterceptorsRuntime = defaultInterceptorsRuntime
+      import runtime._
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[D] =
-        APP.cs(cList, i)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[D] =
+        app.cs(cList, i)
 
-      def clientProgram2[F[_]](implicit APP: MyRPCClient[F]): F[D] =
-        APP.cs(List(c1), i)
+      def clientProgram2[F[_]](implicit app: MyRPCClient[F]): F[D] =
+        app.cs(List(c1), i)
 
-      val clientRuntime: InterceptorsRuntime = defaultClientRuntime
-      import clientRuntime._
-
-      def check1(implicit CR: CollectorRegistry): ConcurrentMonad[Assertion] = suspendM {
+      def check1: ConcurrentMonad[Assertion] = suspendM {
 
         val startedTotal: Double = extractMetricValue(clientMetricRpcStarted)
 
@@ -135,7 +128,7 @@ abstract class BaseMonitorClientInterceptorTests extends RpcBaseTestSuite {
           findRecordedMetricOrThrow(clientMetricStreamMessagesReceived).samples shouldBe empty)()
       }
 
-      def check2(implicit CR: CollectorRegistry): ConcurrentMonad[Assertion] = suspendM {
+      def check2: ConcurrentMonad[Assertion] = suspendM {
 
         val msgSentTotal2: Double = extractMetricValue(clientMetricStreamMessagesSent)
         msgSentTotal2 should be >= 0d
@@ -153,23 +146,24 @@ abstract class BaseMonitorClientInterceptorTests extends RpcBaseTestSuite {
         checkWithRetry(() => completedAssertion)()
       }
 
-      (for {
-        _ <- serverStart[ConcurrentMonad]
-        _ <- clientProgram[ConcurrentMonad]
-        _ <- check1
-        _ <- clientProgram2[ConcurrentMonad]
-        _ <- check2
-        _ <- serverStop[ConcurrentMonad]
-      } yield (): Unit).unsafeRunSync()
-
+      runTestProgram(implicit app =>
+        for {
+          _ <- clientProgram[ConcurrentMonad]
+          _ <- check1
+          _ <- clientProgram2[ConcurrentMonad]
+          _ <- check2
+        } yield (): Unit)
     }
 
     "work for server streaming RPC metrics" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[List[C]] =
-        APP.ss(a2.x, a2.y)
+      val runtime: InterceptorsRuntime = defaultInterceptorsRuntime
+      import runtime._
 
-      def check(implicit CR: CollectorRegistry): ConcurrentMonad[Assertion] = suspendM {
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[List[C]] =
+        app.ss(a2.x, a2.y)
+
+      def check: ConcurrentMonad[Assertion] = suspendM {
         val startedTotal: Double     = extractMetricValue(clientMetricRpcStarted)
         val msgReceivedTotal: Double = extractMetricValue(clientMetricStreamMessagesReceived)
         findRecordedMetricOrThrow(clientMetricStreamMessagesSent).samples shouldBe empty
@@ -186,24 +180,22 @@ abstract class BaseMonitorClientInterceptorTests extends RpcBaseTestSuite {
           List("SERVER_STREAMING", "RPCService", "serverStreaming", "OK"))
       }
 
-      val clientRuntime: InterceptorsRuntime = defaultClientRuntime
-      import clientRuntime._
-
-      (for {
-        _         <- serverStart[ConcurrentMonad]
-        _         <- clientProgram[ConcurrentMonad]
-        assertion <- check
-        _         <- serverStop[ConcurrentMonad]
-      } yield assertion).unsafeRunSync()
-
+      runTestProgram(implicit app =>
+        for {
+          _         <- clientProgram[ConcurrentMonad]
+          assertion <- check
+        } yield assertion)
     }
 
     "work for bidirectional streaming RPC metrics" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[E] =
-        APP.bs(eList)
+      val runtime: InterceptorsRuntime = defaultInterceptorsRuntime
+      import runtime._
 
-      def check(implicit CR: CollectorRegistry): ConcurrentMonad[Assertion] = suspendM {
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[E] =
+        app.bs(eList)
+
+      def check: ConcurrentMonad[Assertion] = suspendM {
         val startedTotal: Double     = extractMetricValue(clientMetricRpcStarted)
         val msgReceivedTotal: Double = extractMetricValue(clientMetricStreamMessagesReceived)
         val msgSentTotal: Double     = extractMetricValue(clientMetricStreamMessagesSent)
@@ -224,40 +216,40 @@ abstract class BaseMonitorClientInterceptorTests extends RpcBaseTestSuite {
           List("BIDI_STREAMING", "RPCService", "biStreaming", "OK"))
       }
 
-      val clientRuntime: InterceptorsRuntime = defaultClientRuntime
-      import clientRuntime._
-
-      (for {
-        _         <- serverStart[ConcurrentMonad]
-        _         <- clientProgram[ConcurrentMonad]
-        assertion <- check
-        _         <- serverStop[ConcurrentMonad]
-      } yield assertion).unsafeRunSync()
+      runTestProgram(implicit app =>
+        for {
+          _         <- clientProgram[ConcurrentMonad]
+          assertion <- check
+        } yield assertion)
     }
 
     "work when no histogram is enabled" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.u(a1.x, a1.y)
+      val runtime: InterceptorsRuntime = defaultInterceptorsRuntime
+      import runtime._
 
-      val clientRuntime: InterceptorsRuntime = defaultClientRuntime
-      import clientRuntime._
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.u(a1.x, a1.y)
 
-      (for {
-        _         <- serverStart[ConcurrentMonad]
-        _         <- clientProgram[ConcurrentMonad]
-        assertion <- suspendM(findRecordedMetric(clientMetricCompletedLatencySeconds) shouldBe None)
-        _         <- serverStop[ConcurrentMonad]
-      } yield assertion).unsafeRunSync()
+      def check: ConcurrentMonad[Assertion] =
+        suspendM(findRecordedMetric(clientMetricCompletedLatencySeconds) shouldBe None)
 
+      runTestProgram(implicit app =>
+        for {
+          _         <- clientProgram[ConcurrentMonad]
+          assertion <- check
+        } yield assertion)
     }
 
     "work when histogram is enabled" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.u(a1.x, a1.y)
+      val runtime: InterceptorsRuntime = allMetricsInterceptorsRuntime
+      import runtime._
 
-      def check(implicit CR: CollectorRegistry): ConcurrentMonad[Assertion] = suspendM {
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.u(a1.x, a1.y)
+
+      def check: ConcurrentMonad[Assertion] = suspendM {
         val metric: Option[Collector.MetricFamilySamples] =
           findRecordedMetric(clientMetricCompletedLatencySeconds)
 
@@ -265,68 +257,58 @@ abstract class BaseMonitorClientInterceptorTests extends RpcBaseTestSuite {
         metric.fold(true)(_.samples.size > 0) shouldBe true
       }
 
-      val clientRuntime: InterceptorsRuntime = allMetricsClientRuntime
-      import clientRuntime._
-
-      (for {
-        _         <- serverStart[ConcurrentMonad]
-        _         <- clientProgram[ConcurrentMonad]
-        assertion <- check
-        _         <- serverStop[ConcurrentMonad]
-      } yield assertion).unsafeRunSync()
-
+      runTestProgram(implicit app =>
+        for {
+          _         <- clientProgram[ConcurrentMonad]
+          assertion <- check
+        } yield assertion)
     }
 
     "work for different buckets" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.u(a1.x, a1.y)
+      val buckets: Vector[Double]      = Vector[Double](0.1, 0.2)
+      val runtime: InterceptorsRuntime = interceptorsRuntimeWithNonDefaultBuckets(buckets)
+      import runtime._
 
-      val buckets: Vector[Double] = Vector[Double](0.1, 0.2)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.u(a1.x, a1.y)
 
-      def check(implicit CR: CollectorRegistry): ConcurrentMonad[Assertion] = suspendM {
+      def check: ConcurrentMonad[Assertion] = suspendM {
         countSamples(
           clientMetricCompletedLatencySeconds,
           "grpc_client_completed_latency_seconds_bucket") shouldBe (buckets.size + 1)
       }
 
-      val clientRuntime: InterceptorsRuntime = clientRuntimeWithNonDefaultBuckets(buckets)
-      import clientRuntime._
-
-      (for {
-        _         <- serverStart[ConcurrentMonad]
-        _         <- clientProgram[ConcurrentMonad]
-        assertion <- check
-        _         <- serverStop[ConcurrentMonad]
-      } yield assertion).unsafeRunSync()
-
+      runTestProgram(implicit app =>
+        for {
+          _         <- clientProgram[ConcurrentMonad]
+          assertion <- check
+        } yield assertion)
     }
 
     "work when combining multiple calls" in {
 
-      def unary[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.u(a1.x, a1.y)
+      val runtime: InterceptorsRuntime = defaultInterceptorsRuntime
+      import runtime._
 
-      def clientStreaming[F[_]](implicit APP: MyRPCClient[F]): F[D] =
-        APP.cs(cList, i)
+      def unary[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.u(a1.x, a1.y)
 
-      def check(implicit CR: CollectorRegistry): ConcurrentMonad[Assertion] = suspendM {
+      def clientStreaming[F[_]](implicit app: MyRPCClient[F]): F[D] =
+        app.cs(cList, i)
+
+      def check: ConcurrentMonad[Assertion] = suspendM {
         findRecordedMetricOrThrow(clientMetricRpcStarted).samples.size() shouldBe 2
         checkWithRetry(
           () => findRecordedMetricOrThrow(clientMetricRpcCompleted).samples.size() shouldBe 2)()
       }
 
-      val clientRuntime: InterceptorsRuntime = defaultClientRuntime
-      import clientRuntime._
-
-      (for {
-        _         <- serverStart[ConcurrentMonad]
-        _         <- unary[ConcurrentMonad]
-        _         <- clientStreaming[ConcurrentMonad]
-        assertion <- check
-        _         <- serverStop[ConcurrentMonad]
-      } yield assertion).unsafeRunSync()
-
+      runTestProgram(implicit app =>
+        for {
+          _         <- unary[ConcurrentMonad]
+          _         <- clientStreaming[ConcurrentMonad]
+          assertion <- check
+        } yield assertion)
     }
 
   }
