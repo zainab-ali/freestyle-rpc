@@ -22,6 +22,7 @@ import freestyle.rpc.common._
 import freestyle.rpc.testing.ServerChannel.withServerChannel
 import io.grpc.ServerServiceDefinition
 import org.scalatest._
+import monix.execution.Scheduler.Implicits.global
 
 class RPCTests extends RpcBaseTestSuite {
 

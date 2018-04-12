@@ -21,383 +21,379 @@ import cats.Monad
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 import com.google.protobuf.InvalidProtocolBufferException
-import org.scalatest._
 import freestyle.rpc.common._
-import freestyle.rpc.protocol.Utils.handlers.client.{
-  FreesRPCServiceClientCompressedHandler,
-  FreesRPCServiceClientHandler
-}
-import freestyle.rpc.server._
+import freestyle.rpc.protocol.Utils.handlers.client._
+import freestyle.rpc.testing.ServerChannel.withServerChannel
+import monix.execution.Scheduler.Implicits.global
 
-class RPCTests extends RpcBaseTestSuite with BeforeAndAfterAll {
+class RPCTests extends RpcBaseTestSuite {
 
-  import freestyle.rpc.protocol.Utils._
-  import freestyle.rpc.protocol.Utils.client.MyRPCClient
+  import freestyle.rpc.protocol.Utils.client._
+  import freestyle.rpc.protocol.Utils.service._
   import freestyle.rpc.protocol.Utils.database._
   import freestyle.rpc.protocol.Utils.implicits._
 
-  override protected def beforeAll(): Unit = {
-    import freestyle.rpc.server.implicits._
-    serverStart[ConcurrentMonad].unsafeRunSync()
-  }
+  "frees-rpc client with monix.Observable as streaming implementation" should {
 
-  override protected def afterAll(): Unit = {
-    import freestyle.rpc.server.implicits._
-    serverStop[ConcurrentMonad].unsafeRunSync()
-  }
-
-  "frees-rpc server" should {
-
-    import freestyle.rpc.server.implicits._
-
-    "allow to startup a server and check if it's alive" in {
-
-      def check[F[_]](implicit S: GrpcServer[F]): F[Boolean] =
-        S.isShutdown
-
-      check[ConcurrentMonad].unsafeRunSync() shouldBe false
-
-    }
-
-    "allow to get the port where it's running" in {
-
-      def check[F[_]](implicit S: GrpcServer[F]): F[Int] =
-        S.getPort
-
-      check[ConcurrentMonad].unsafeRunSync() shouldBe SC.port
-
-    }
-
-  }
-
-  "frees-rpc client" should {
-
-    implicit val freesRPCServiceClientHandler: FreesRPCServiceClientHandler[ConcurrentMonad] =
-      new FreesRPCServiceClientHandler[ConcurrentMonad]
+    def runTestProgram[A](f: MyRPCClient[ConcurrentMonad] => ConcurrentMonad[A]): A =
+      withServerChannel(Seq(serviceDefinition)) { sc =>
+        implicit val client: RPCService.Client[ConcurrentMonad] =
+          RPCService.clientFromChannel[ConcurrentMonad](sc)
+        implicit val clientHandler: FreesRPCServiceClientHandler[ConcurrentMonad] =
+          new FreesRPCServiceClientHandler[ConcurrentMonad]
+        f(clientHandler).unsafeRunSync()
+      }
 
     "be able to run unary services" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.u(a1.x, a1.y)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.u(a1.x, a1.y)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe c1
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe c1
 
     }
 
     "be able to run unary services with avro schema" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.uws(a1.x, a1.y)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.uws(a1.x, a1.y)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe c1
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe c1
 
     }
 
     "be able to run server streaming services" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[List[C]] =
-        APP.ss(a2.x, a2.y)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[List[C]] =
+        app.ss(a2.x, a2.y)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe cList
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe cList
 
     }
 
     "be able to run client streaming services" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[D] =
-        APP.cs(cList, i)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[D] =
+        app.cs(cList, i)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe dResult
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe dResult
     }
 
     "be able to run client bidirectional streaming services" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[E] =
-        APP.bs(eList)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[E] =
+        app.bs(eList)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe e1
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe e1
 
     }
 
     "be able to run client bidirectional streaming services with avro schema" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[E] =
-        APP.bsws(eList)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[E] =
+        app.bsws(eList)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe e1
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe e1
 
     }
 
     "be able to run rpc services monadically" in {
 
-      def clientProgram[F[_]: Monad](implicit APP: MyRPCClient[F]): F[(C, C, List[C], D, E, E)] = {
+      def clientProgram[F[_]: Monad](implicit app: MyRPCClient[F]): F[(C, C, List[C], D, E, E)] = {
         for {
-          u <- APP.u(a1.x, a1.y)
-          v <- APP.uws(a1.x, a1.y)
-          w <- APP.ss(a2.x, a2.y)
-          x <- APP.cs(cList, i)
-          y <- APP.bs(eList)
-          z <- APP.bsws(eList)
+          u <- app.u(a1.x, a1.y)
+          v <- app.uws(a1.x, a1.y)
+          w <- app.ss(a2.x, a2.y)
+          x <- app.cs(cList, i)
+          y <- app.bs(eList)
+          z <- app.bsws(eList)
         } yield (u, v, w, x, y, z)
       }
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe ((c1, c1, cList, dResult, e1, e1))
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe (
+        (
+          c1,
+          c1,
+          cList,
+          dResult,
+          e1,
+          e1))
 
     }
 
     "#67 issue - booleans as request are not allowed" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.notAllowed(true)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.notAllowed(true)
 
-      assertThrows[InvalidProtocolBufferException](clientProgram[ConcurrentMonad].unsafeRunSync())
+      assertThrows[InvalidProtocolBufferException](
+        runTestProgram(implicit app => clientProgram[ConcurrentMonad]))
 
     }
 
     "be able to invoke services with empty requests" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[Empty.type] =
-        APP.empty
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[Empty.type] =
+        app.empty
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe Empty
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe Empty
 
     }
 
     "#71 issue - empty for avro" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[Empty.type] =
-        APP.emptyAvro
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[Empty.type] =
+        app.emptyAvro
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe Empty
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe Empty
     }
 
     "empty for avro with schema" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[Empty.type] =
-        APP.emptyAvroWithSchema
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[Empty.type] =
+        app.emptyAvroWithSchema
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe Empty
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe Empty
     }
 
     "#71 issue - empty response with one param for avro" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[Empty.type] =
-        APP.emptyAvroParam(a4)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[Empty.type] =
+        app.emptyAvroParam(a4)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe Empty
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe Empty
     }
 
     "empty response with one param for avro with schema" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[Empty.type] =
-        APP.emptyAvroWithSchemaParam(a4)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[Empty.type] =
+        app.emptyAvroWithSchemaParam(a4)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe Empty
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe Empty
     }
 
     "#71 issue - response with empty params for avro" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[A] =
-        APP.emptyAvroParamResponse
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[A] =
+        app.emptyAvroParamResponse
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe a4
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe a4
 
     }
 
     "response with empty params for avro with schema" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[A] =
-        APP.emptyAvroWithSchemaParamResponse
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[A] =
+        app.emptyAvroWithSchemaParamResponse
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe a4
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe a4
 
     }
 
     "#71 issue - empty response with one param for proto" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[Empty.type] =
-        APP.emptyParam(a4)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[Empty.type] =
+        app.emptyParam(a4)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe Empty
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe Empty
     }
 
     "#71 issue - response with empty params for proto" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[A] =
-        APP.emptyParamResponse
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[A] =
+        app.emptyParamResponse
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe a4
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe a4
 
     }
 
     "be able to have non request methods" in {
 
-      def clientProgram[F[_]: cats.Functor](implicit client: service.RPCService.Client[F]): F[Int] =
+      def clientProgram[F[_]: cats.Functor](implicit client: RPCService.Client[F]): F[Int] =
         client.sumA
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe 3000
+      withServerChannel(Seq(serviceDefinition)) { sc =>
+        implicit val client: RPCService.Client[ConcurrentMonad] =
+          RPCService.clientFromChannel[ConcurrentMonad](sc)
+        implicit val clientHandler: FreesRPCServiceClientHandler[ConcurrentMonad] =
+          new FreesRPCServiceClientHandler[ConcurrentMonad]
+        clientProgram[ConcurrentMonad].unsafeRunSync()
+      } shouldBe 3000
     }
 
   }
 
-  "frees-rpc client with compression" should {
+  "frees-rpc client with monix.Observable as streaming implementation and compression enabled" should {
 
-    implicit val freesRPCServiceClientHandler: FreesRPCServiceClientCompressedHandler[
-      ConcurrentMonad] =
-      new FreesRPCServiceClientCompressedHandler[ConcurrentMonad]
+    def runTestProgram[A](f: MyRPCClient[ConcurrentMonad] => ConcurrentMonad[A]): A =
+      withServerChannel(Seq(serviceDefinition)) { sc =>
+        implicit val client: RPCService.Client[ConcurrentMonad] =
+          RPCService.clientFromChannel[ConcurrentMonad](sc)
+        implicit val clientHandler: FreesRPCServiceClientCompressedHandler[ConcurrentMonad] =
+          new FreesRPCServiceClientCompressedHandler[ConcurrentMonad]
+        f(clientHandler).unsafeRunSync()
+      }
 
     "be able to run unary services" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.u(a1.x, a1.y)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.u(a1.x, a1.y)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe c1
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe c1
 
     }
 
     "be able to run unary services with avro schema" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.uws(a1.x, a1.y)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.uws(a1.x, a1.y)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe c1
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe c1
 
     }
 
     "be able to run server streaming services" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[List[C]] =
-        APP.ss(a2.x, a2.y)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[List[C]] =
+        app.ss(a2.x, a2.y)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe cList
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe cList
 
     }
 
     "be able to run client streaming services" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[D] =
-        APP.cs(cList, i)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[D] =
+        app.cs(cList, i)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe dResult
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe dResult
     }
 
     "be able to run client bidirectional streaming services" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[E] =
-        APP.bs(eList)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[E] =
+        app.bs(eList)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe e1
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe e1
 
     }
 
     "be able to run client bidirectional streaming services with avro schema" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[E] =
-        APP.bsws(eList)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[E] =
+        app.bsws(eList)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe e1
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe e1
 
     }
 
     "be able to run rpc services monadically" in {
 
-      def clientProgram[F[_]: Monad](implicit APP: MyRPCClient[F]): F[(C, C, List[C], D, E, E)] = {
+      def clientProgram[F[_]: Monad](implicit app: MyRPCClient[F]): F[(C, C, List[C], D, E, E)] = {
         for {
-          u <- APP.u(a1.x, a1.y)
-          v <- APP.uws(a1.x, a1.y)
-          w <- APP.ss(a2.x, a2.y)
-          x <- APP.cs(cList, i)
-          y <- APP.bs(eList)
-          z <- APP.bsws(eList)
+          u <- app.u(a1.x, a1.y)
+          v <- app.uws(a1.x, a1.y)
+          w <- app.ss(a2.x, a2.y)
+          x <- app.cs(cList, i)
+          y <- app.bs(eList)
+          z <- app.bsws(eList)
         } yield (u, v, w, x, y, z)
       }
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe ((c1, c1, cList, dResult, e1, e1))
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe (
+        (
+          c1,
+          c1,
+          cList,
+          dResult,
+          e1,
+          e1))
 
     }
 
     "#67 issue - booleans as request are not allowed" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[C] =
-        APP.notAllowed(true)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[C] =
+        app.notAllowed(true)
 
-      assertThrows[InvalidProtocolBufferException](clientProgram[ConcurrentMonad].unsafeRunSync())
+      assertThrows[InvalidProtocolBufferException](
+        runTestProgram(implicit app => clientProgram[ConcurrentMonad]))
 
     }
 
     "be able to invoke services with empty requests" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[Empty.type] =
-        APP.empty
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[Empty.type] =
+        app.empty
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe Empty
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe Empty
 
     }
 
     "#71 issue - empty for avro" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[Empty.type] =
-        APP.emptyAvro
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[Empty.type] =
+        app.emptyAvro
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe Empty
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe Empty
     }
 
     "empty for avro with schema" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[Empty.type] =
-        APP.emptyAvroWithSchema
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[Empty.type] =
+        app.emptyAvroWithSchema
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe Empty
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe Empty
     }
 
     "#71 issue - empty response with one param for avro" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[Empty.type] =
-        APP.emptyAvroParam(a4)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[Empty.type] =
+        app.emptyAvroParam(a4)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe Empty
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe Empty
     }
 
     "empty response with one param for avro with schema" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[Empty.type] =
-        APP.emptyAvroWithSchemaParam(a4)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[Empty.type] =
+        app.emptyAvroWithSchemaParam(a4)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe Empty
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe Empty
     }
 
     "#71 issue - response with empty params for avro" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[A] =
-        APP.emptyAvroParamResponse
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[A] =
+        app.emptyAvroParamResponse
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe a4
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe a4
 
     }
 
     "response with empty params for avro with schema" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[A] =
-        APP.emptyAvroWithSchemaParamResponse
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[A] =
+        app.emptyAvroWithSchemaParamResponse
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe a4
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe a4
 
     }
 
     "#71 issue - empty response with one param for proto" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[Empty.type] =
-        APP.emptyParam(a4)
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[Empty.type] =
+        app.emptyParam(a4)
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe Empty
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe Empty
     }
 
     "#71 issue - response with empty params for proto" in {
 
-      def clientProgram[F[_]](implicit APP: MyRPCClient[F]): F[A] =
-        APP.emptyParamResponse
+      def clientProgram[F[_]](implicit app: MyRPCClient[F]): F[A] =
+        app.emptyParamResponse
 
-      clientProgram[ConcurrentMonad].unsafeRunSync() shouldBe a4
+      runTestProgram(implicit app => clientProgram[ConcurrentMonad]) shouldBe a4
 
     }
 

@@ -23,6 +23,7 @@ import cats.syntax.applicative._
 import freestyle.rpc.common._
 import freestyle.rpc.server.implicits._
 import freestyle.tagless.tagless
+import io.grpc.ServerServiceDefinition
 import monix.reactive.Observable
 
 object Utils extends CommonUtils {
@@ -158,6 +159,7 @@ object Utils extends CommonUtils {
       import database._
       import service._
       import freestyle.rpc.protocol._
+      import monix.execution.Scheduler.Implicits.global
 
       class ServerRPCService[F[_]: Async] extends RPCService[F] {
 
@@ -260,6 +262,7 @@ object Utils extends CommonUtils {
       import service._
       import freestyle.rpc.protocol.Utils.client.MyRPCClient
       import freestyle.rpc.protocol._
+      import monix.execution.Scheduler.Implicits.global
 
       class FreesRPCServiceClientHandler[F[_]: Async](
           implicit client: RPCService.Client[F],
@@ -439,27 +442,12 @@ object Utils extends CommonUtils {
 
     import service._
     import handlers.server._
-    import freestyle.rpc.server._
+    import monix.execution.Scheduler.Implicits.global
 
-    //////////////////////////////////
-    // Server Runtime Configuration //
-    //////////////////////////////////
-
-    implicit val freesRPCHandler: ServerRPCService[ConcurrentMonad] =
+    implicit private val freesRPCHandler: ServerRPCService[ConcurrentMonad] =
       new ServerRPCService[ConcurrentMonad]
 
-    val grpcConfigs: List[GrpcConfig] = List(
-      AddService(RPCService.bindService[ConcurrentMonad])
-    )
-
-    implicit val serverW: ServerW = createServerConf(grpcConfigs)
-
-    //////////////////////////////////
-    // Client Runtime Configuration //
-    //////////////////////////////////
-
-    implicit val freesRPCServiceClient: RPCService.Client[ConcurrentMonad] =
-      RPCService.client[ConcurrentMonad](createChannelFor)
+    val serviceDefinition: ServerServiceDefinition = RPCService.bindService[ConcurrentMonad]
 
   }
 

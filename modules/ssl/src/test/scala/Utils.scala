@@ -67,6 +67,7 @@ object Utils extends CommonUtils {
 
     import service._
     import handlers.server._
+    import monix.execution.Scheduler.Implicits.global
 
     //////////////////////////////////
     // Server Runtime Configuration //

@@ -19,6 +19,9 @@ package fs2
 
 import freestyle.rpc.common._
 import _root_.fs2.Stream
+import freestyle.rpc.fs2.Utils.service.RPCService
+import freestyle.rpc.testing.ServerChannel.withServerChannel
+import monix.execution.Scheduler.Implicits.global
 
 class RPCTests extends RpcBaseTestSuite {
 
@@ -26,6 +29,13 @@ class RPCTests extends RpcBaseTestSuite {
   import freestyle.rpc.fs2.Utils.implicits._
 
   "frees-rpc client with fs2.Stream as streaming implementation" should {
+
+    def runTestProgram[A](f: RPCService.Client[ConcurrentMonad] => A): A =
+      withServerChannel(Seq(serviceDefinition)) { sc =>
+        implicit val client: RPCService.Client[ConcurrentMonad] =
+          RPCService.clientFromChannel[ConcurrentMonad](sc)
+        f(client)
+      }
 
     "be able to run unary services" in {
 
@@ -91,6 +101,13 @@ class RPCTests extends RpcBaseTestSuite {
   }
 
   "frees-rpc client with fs2.Stream as streaming implementation and compression enabled" should {
+
+    def runTestProgram[A](f: RPCService.Client[ConcurrentMonad] => A): A =
+      withServerChannel(Seq(serviceDefinition)) { sc =>
+        implicit val client: RPCService.Client[ConcurrentMonad] =
+          RPCService.clientFromChannel[ConcurrentMonad](sc)
+        f(client)
+      }
 
     "be able to run unary services" in {
 

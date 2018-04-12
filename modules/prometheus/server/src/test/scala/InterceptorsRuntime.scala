@@ -28,6 +28,7 @@ import freestyle.rpc.protocol.Utils.handlers.server._
 import freestyle.rpc.testing.ServerChannel.withServerChannel
 import io.grpc.ServerServiceDefinition
 import io.prometheus.client.CollectorRegistry
+import monix.execution.Scheduler.Implicits.global
 
 class InterceptorsRuntime(
     configuration: Configuration,

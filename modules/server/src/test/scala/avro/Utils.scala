@@ -247,6 +247,7 @@ object Utils extends CommonUtils {
   trait FreesRuntime {
 
     import handlers._
+    import monix.execution.Scheduler.Implicits.global
 
     //////////////////////////////////
     // Server Runtime Configuration //

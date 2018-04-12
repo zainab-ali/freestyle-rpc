@@ -27,6 +27,7 @@ import freestyle.rpc.testing.ServerChannel.withServerChannel
 import io.grpc._
 import io.grpc.inprocess.InProcessChannelBuilder
 import io.prometheus.client.CollectorRegistry
+import monix.execution.Scheduler.Implicits.global
 
 class InterceptorsRuntime(
     configuration: Configuration,

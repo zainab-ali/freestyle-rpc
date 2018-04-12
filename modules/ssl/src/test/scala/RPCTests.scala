@@ -30,7 +30,9 @@ import freestyle.rpc.server.implicits._
 import io.grpc.internal.testing.TestUtils
 import io.grpc.netty.NegotiationType
 import org.scalatest._
+import monix.execution.Scheduler.Implicits.global
 
+//TODO: adapt to use freestyle.rpc.testing.ServerChannel
 class RPCTests extends RpcBaseTestSuite with BeforeAndAfterAll {
 
   import freestyle.rpc.ssl.Utils._

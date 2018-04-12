@@ -16,15 +16,11 @@
 
 package freestyle.rpc
 
-import java.net.ServerSocket
-
 import cats.Functor
 import cats.syntax.functor._
 import freestyle.rpc.common._
 import freestyle.rpc.server._
 import org.slf4j.LoggerFactory
-
-import scala.util.{Failure, Success, Try}
 
 trait CommonUtils {
 
@@ -53,37 +49,11 @@ trait CommonUtils {
 
   def createChannelFor: ChannelFor = ChannelForAddress(SC.host, SC.port)
 
-  def createChannelForPort(port: Int): ChannelFor =
-    ChannelForAddress(SC.host, port)
-
-  def createServerConf(grpcConfigs: List[GrpcConfig]): ServerW =
-    ServerW.default(SC.port, grpcConfigs)
-
-  def createServerConfOnRandomPort(grpcConfigs: List[GrpcConfig]): ServerW =
-    ServerW.default(pickUnusedPort, grpcConfigs)
-
   def serverStart[F[_]: Functor](implicit S: GrpcServer[F]): F[Unit] =
     S.start().void
 
   def serverStop[F[_]: Functor](implicit S: GrpcServer[F]): F[Unit] =
     S.shutdownNow().void
 
-  def serverAwaitTermination[F[_]: Functor](implicit S: GrpcServer[F]): F[Unit] =
-    S.awaitTermination()
-
   def debug(str: String): Unit = logger.debug(str)
-
-  implicit val S: monix.execution.Scheduler = monix.execution.Scheduler.Implicits.global
-
-  val pickUnusedPort: Int =
-    Try {
-      val serverSocket: ServerSocket = new ServerSocket(0)
-      val port: Int                  = serverSocket.getLocalPort
-      serverSocket.close()
-      port
-    } match {
-      case Success(s) => s
-      case Failure(e) =>
-        throw new RuntimeException(e)
-    }
 }
