@@ -23,9 +23,14 @@ import _root_.fs2._
 import _root_.fs2.interop.reactivestreams._
 import monix.execution.Scheduler
 import io.grpc.{CallOptions, Channel, MethodDescriptor}
+import java.util.concurrent.Executors
 import monix.reactive.Observable
+import scala.concurrent.ExecutionContext
 
 object fs2Calls {
+
+  private val singleThreadedEC =
+    ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor)
 
   def unary[F[_]: Effect, Req, Res](
       request: Req,
@@ -42,7 +47,7 @@ object fs2Calls {
     monixCalls
       .serverStreaming(request, descriptor, channel, options)
       .toReactivePublisher
-      .toStream[F]
+      .toStream[F]()(implicitly[Effect[F]], singleThreadedEC)
 
   def clientStreaming[F[_]: Effect, Req, Res](
       input: Stream[F, Req],
@@ -69,5 +74,5 @@ object fs2Calls {
         channel,
         options)
       .toReactivePublisher
-      .toStream[F]
+      .toStream[F]()(implicitly[Effect[F]], singleThreadedEC)
 }

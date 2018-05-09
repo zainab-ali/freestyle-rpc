@@ -23,12 +23,17 @@ import _root_.fs2.interop.reactivestreams._
 import cats.effect.Effect
 import io.grpc.stub.ServerCalls._
 import io.grpc.stub.StreamObserver
+import java.util.concurrent.Executors
 import monix.execution.Scheduler
 import monix.reactive.Observable
+import scala.concurrent.ExecutionContext
 
 object fs2Calls {
 
   import freestyle.rpc.internal.converters._
+
+  private val singleThreadedEC =
+    ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor)
 
   def unaryMethod[F[_]: Effect, Req, Res](
       f: Req => F[Res],
@@ -44,7 +49,9 @@ object fs2Calls {
         addCompression(responseObserver, maybeCompression)
         transformStreamObserver[Req, Res](
           inputObservable =>
-            Observable.fromEffect(f(inputObservable.toReactivePublisher.toStream[F])),
+            Observable.fromEffect(
+              f(inputObservable.toReactivePublisher
+                .toStream[F]()(implicitly[Effect[F]], singleThreadedEC))),
           responseObserver
         )
       }
@@ -71,7 +78,8 @@ object fs2Calls {
         transformStreamObserver[Req, Res](
           (inputObservable: Observable[Req]) =>
             Observable.fromReactivePublisher(
-              f(inputObservable.toReactivePublisher.toStream[F]).toUnicastPublisher),
+              f(inputObservable.toReactivePublisher
+                .toStream[F]()(implicitly[Effect[F]], singleThreadedEC)).toUnicastPublisher),
           responseObserver
         )
       }
