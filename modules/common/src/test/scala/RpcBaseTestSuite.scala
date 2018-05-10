@@ -18,6 +18,7 @@ package freestyle.rpc
 package common
 
 import cats.data.Kleisli
+import java.util.logging.LogManager
 import org.scalactic.Prettifier
 import org.scalamock.scalatest.MockFactory
 import org.scalatest._
@@ -25,6 +26,9 @@ import scala.compat.Platform
 import scala.io._
 
 trait RpcBaseTestSuite extends WordSpec with Matchers with OneInstancePerTest with MockFactory {
+
+  // Suppress stack traces from io.grpc.internal.SerializingExecutor for expected exceptions
+  LogManager.getLogManager.reset()
 
   trait Helpers {
 

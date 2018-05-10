@@ -22,18 +22,10 @@ import _root_.fs2.Stream
 import _root_.fs2.interop.reactivestreams._
 import cats.effect.Effect
 import io.grpc.stub.ServerCalls._
-import io.grpc.stub.StreamObserver
-import java.util.concurrent.Executors
 import monix.execution.Scheduler
 import monix.reactive.Observable
-import scala.concurrent.ExecutionContext
 
 object fs2Calls {
-
-  import freestyle.rpc.internal.converters._
-
-  private val singleThreadedEC =
-    ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor)
 
   def unaryMethod[F[_]: Effect, Req, Res](
       f: Req => F[Res],
@@ -43,46 +35,23 @@ object fs2Calls {
   def clientStreamingMethod[F[_]: Effect, Req, Res](
       f: Stream[F, Req] => F[Res],
       maybeCompression: Option[String])(implicit S: Scheduler): ClientStreamingMethod[Req, Res] =
-    new ClientStreamingMethod[Req, Res] {
-
-      override def invoke(responseObserver: StreamObserver[Res]): StreamObserver[Req] = {
-        addCompression(responseObserver, maybeCompression)
-        transformStreamObserver[Req, Res](
-          inputObservable =>
-            Observable.fromEffect(
-              f(inputObservable.toReactivePublisher
-                .toStream[F]()(implicitly[Effect[F]], singleThreadedEC))),
-          responseObserver
-        )
-      }
-    }
+    monixCalls.clientStreamingMethod(
+      f compose (o => o.toReactivePublisher.toStream[F]),
+      maybeCompression)
 
   def serverStreamingMethod[F[_]: Effect, Req, Res](
       f: Req => Stream[F, Res],
       maybeCompression: Option[String])(implicit S: Scheduler): ServerStreamingMethod[Req, Res] =
-    new ServerStreamingMethod[Req, Res] {
-
-      override def invoke(request: Req, responseObserver: StreamObserver[Res]): Unit = {
-        addCompression(responseObserver, maybeCompression)
-        f(request).toUnicastPublisher.subscribe(responseObserver.toSubscriber.toReactive)
-      }
-    }
+    monixCalls.serverStreamingMethod(
+      f andThen (s => Observable.fromReactivePublisher(s.toUnicastPublisher)),
+      maybeCompression)
 
   def bidiStreamingMethod[F[_]: Effect, Req, Res](
       f: Stream[F, Req] => Stream[F, Res],
       maybeCompression: Option[String])(implicit S: Scheduler): BidiStreamingMethod[Req, Res] =
-    new BidiStreamingMethod[Req, Res] {
-
-      override def invoke(responseObserver: StreamObserver[Res]): StreamObserver[Req] = {
-        addCompression(responseObserver, maybeCompression)
-        transformStreamObserver[Req, Res](
-          (inputObservable: Observable[Req]) =>
-            Observable.fromReactivePublisher(
-              f(inputObservable.toReactivePublisher
-                .toStream[F]()(implicitly[Effect[F]], singleThreadedEC)).toUnicastPublisher),
-          responseObserver
-        )
-      }
-    }
+    monixCalls.bidiStreamingMethod(
+      f andThen (s => Observable.fromReactivePublisher(s.toUnicastPublisher))
+        compose (o => o.toReactivePublisher.toStream[F]),
+      maybeCompression)
 
 }
