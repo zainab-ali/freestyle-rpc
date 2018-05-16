@@ -21,7 +21,11 @@ import freestyle.rpc.common._
 import freestyle.rpc.protocol._
 import _root_.fs2._
 import cats.effect.Effect
-import io.grpc.Status
+import io.grpc.ForwardingClientCall.SimpleForwardingClientCall
+import io.grpc.ForwardingClientCallListener.SimpleForwardingClientCallListener
+import io.grpc.ForwardingServerCallListener.SimpleForwardingServerCallListener
+import io.grpc._
+import io.grpc.netty.NettyChannelBuilder
 
 object Utils extends CommonUtils {
 
@@ -140,7 +144,7 @@ object Utils extends CommonUtils {
         def biStreamingCompressedWithSchema(oe: Stream[F, E]): Stream[F, E] =
           biStreamingCompressed(oe)
 
-        def save(e: E): E = e // do something else with e?
+        def save(e: E) = debug(s"Processing: $e")
 
       }
 
@@ -162,7 +166,9 @@ object Utils extends CommonUtils {
       new ServerRPCService[ConcurrentMonad]
 
     val grpcConfigs: List[GrpcConfig] = List(
-      AddService(RPCService.bindService[ConcurrentMonad])
+      AddService(
+        ServerInterceptors
+          .intercept(RPCService.bindService[ConcurrentMonad], ServerLoggingInterceptor))
     )
 
     implicit val serverW: ServerW = createServerConf(grpcConfigs)
@@ -172,10 +178,95 @@ object Utils extends CommonUtils {
     //////////////////////////////////
 
     implicit val freesRPCServiceClient: RPCService.Client[ConcurrentMonad] =
-      RPCService.client[ConcurrentMonad](createChannelFor)
+      RPCService.clientFromChannel[ConcurrentMonad](
+        ClientInterceptors.intercept(
+          NettyChannelBuilder.forAddress(SC.host, SC.port).usePlaintext().build,
+          ClientLoggingInterceptor))
 
   }
 
   object implicits extends FreesRuntime
 
+}
+
+object ServerLoggingInterceptor extends ServerInterceptor {
+
+  private val log = org.log4s.getLogger
+
+  def interceptCall[ReqT, RespT](
+      call: ServerCall[ReqT, RespT],
+      headers: Metadata,
+      next: ServerCallHandler[ReqT, RespT]): ServerCall.Listener[ReqT] = {
+
+    new SimpleForwardingServerCallListener[ReqT](next.startCall(call, headers)) {
+
+      override def onMessage(message: ReqT): Unit = {
+        log.debug(message.toString)
+        super.onMessage(message)
+      }
+
+      override def onHalfClose(): Unit = {
+        log.debug("onHalfClose")
+        super.onHalfClose()
+      }
+
+      override def onCancel(): Unit = {
+        log.debug("onCancel")
+        super.onCancel()
+      }
+
+      override def onComplete(): Unit = {
+        log.debug("onComplete")
+        super.onComplete()
+      }
+
+      override def onReady(): Unit = {
+        log.debug("onReady")
+        super.onReady()
+      }
+    }
+  }
+
+}
+
+object ClientLoggingInterceptor extends ClientInterceptor {
+
+  private val log = org.log4s.getLogger
+
+  def interceptCall[ReqT, RespT](
+      method: MethodDescriptor[ReqT, RespT],
+      callOptions: CallOptions,
+      next: Channel): ClientCall[ReqT, RespT] = {
+
+    new SimpleForwardingClientCall[ReqT, RespT](next.newCall(method, callOptions)) {
+
+      override def start(responseListener: ClientCall.Listener[RespT], headers: Metadata): Unit = {
+        delegate.start(
+          new SimpleForwardingClientCallListener[RespT](responseListener) {
+
+            override def onMessage(message: RespT): Unit = {
+              log.debug(message.toString)
+              super.onMessage(message)
+            }
+
+            override def onReady(): Unit = {
+              log.debug("onReady")
+              super.onReady()
+            }
+
+            override def onHeaders(headers: Metadata): Unit = {
+              log.debug(s"onHeaders: $headers")
+              super.onHeaders(headers)
+            }
+
+            override def onClose(status: Status, trailers: Metadata): Unit = {
+              log.debug(s"onClose: $status $trailers")
+              super.onClose(status, trailers)
+            }
+          },
+          headers
+        )
+      }
+    }
+  }
 }

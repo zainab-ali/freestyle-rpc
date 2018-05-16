@@ -86,7 +86,8 @@ object ProjectPlugin extends AutoPlugin {
       libraryDependencies ++= Seq(
         %("grpc-netty", V.grpc),
         %%("scalamockScalatest") % Test,
-        "io.netty"               % "netty-tcnative-boringssl-static" % V.nettySSL % Test
+        "io.netty"       % "netty-tcnative-boringssl-static" % V.nettySSL % Test,
+        "ch.qos.logback" % "logback-classic" % "1.2.3" % Test
       )
     )
 
@@ -197,7 +198,8 @@ object ProjectPlugin extends AutoPlugin {
   override def projectSettings: Seq[Def.Setting[_]] =
     // format: OFF
     scalaMetaSettings ++ sharedReleaseProcess ++ warnUnusedImport ++ Seq(
-      libraryDependencies ++= commonDeps :+ %("slf4j-nop") % Test,
+      libraryDependencies ++= commonDeps, // :+ %("slf4j-nop") % Test,
+      Test / logBuffered := false,
       Test / fork := true,
       Tut / scalacOptions -= "-Ywarn-unused-import",
       orgAfterCISuccessTaskListSetting ~= (_.filterNot(_ == defaultPublishMicrosite)),
